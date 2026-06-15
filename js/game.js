@@ -422,9 +422,10 @@ class UndergroundRadioGame {
             return;
         }
 
-        this.gameState.settlementHistory.slice().reverse().forEach(settlement => {
+        this.gameState.settlementHistory.slice().reverse().forEach((settlement, index) => {
             const item = document.createElement('div');
-            item.className = 'settlement-item';
+            item.className = 'settlement-item clickable';
+            item.title = '点击查看详细因果报告';
             
             let statsHtml = '';
             Object.entries(settlement.effects).forEach(([stat, value]) => {
@@ -435,13 +436,26 @@ class UndergroundRadioGame {
                 }
             });
 
+            let keyDecisionPreview = '';
+            if (settlement.keyDecisions && settlement.keyDecisions.length > 0) {
+                const topDecision = settlement.keyDecisions[0];
+                keyDecisionPreview = `<div class="settlement-decision-preview">💡 ${topDecision.length > 40 ? topDecision.substring(0, 40) + '...' : topDecision}</div>`;
+            }
+
             item.innerHTML = `
                 <div class="settlement-header">
                     <span>第 ${settlement.day} 天结算</span>
-                    <span style="font-size:12px; color:#888">${settlement.summary}</span>
+                    <span class="settlement-summary ${settlement.summary}">${settlement.summary}</span>
                 </div>
                 <div class="settlement-stats">${statsHtml}</div>
+                ${keyDecisionPreview}
+                <div class="settlement-hint">👆 点击查看详细因果报告</div>
             `;
+
+            item.addEventListener('click', () => {
+                this.showSettlementDetailModal(settlement);
+            });
+
             container.appendChild(item);
         });
     }
@@ -679,15 +693,17 @@ class UndergroundRadioGame {
     }
 
     endDay() {
-        const dayEffects = {
-            power: 0,
-            noise: 0,
-            rumor: 0,
-            fatigue: 0,
-            morale: 0,
-            food: 0
+        const causalReport = {
+            programEffects: { power: 0, noise: 0, rumor: 0, fatigue: 0, morale: 0 },
+            broadcastEffects: { power: 0, noise: 0, rumor: 0, fatigue: 0, morale: 0 },
+            qaEffects: { power: 0, noise: 0, rumor: 0, fatigue: 0, morale: 0 },
+            equipmentEffects: { power: 0, noise: 0, rumor: 0, fatigue: 0, morale: 0 },
+            rumorEffects: { power: 0, noise: 0, rumor: 0, fatigue: 0, morale: 0 },
+            resourceEffects: { power: 0, noise: 0, rumor: 0, fatigue: 0, morale: 0, food: 0 },
+            thresholdEffects: { power: 0, noise: 0, rumor: 0, fatigue: 0, morale: 0 }
         };
 
+        const programDetails = [];
         let totalPowerUsed = 0;
         ['morning', 'afternoon', 'evening'].forEach(slot => {
             const programId = this.gameState.schedule[slot];
@@ -695,20 +711,112 @@ class UndergroundRadioGame {
                 const program = GameData.programTypes.find(p => p.id === programId);
                 if (program) {
                     totalPowerUsed += program.power;
+                    const slotName = { morning: '早间', afternoon: '午间', evening: '晚间' }[slot];
+                    const effectsText = Object.entries(program.effects)
+                        .filter(([_, v]) => v !== 0)
+                        .map(([k, v]) => `${this.getStatName(k)}${v > 0 ? '+' : ''}${v}`)
+                        .join(', ');
+                    programDetails.push(`${slotName}：${program.name}（${effectsText}，耗电⚡${program.power}）`);
                     Object.entries(program.effects).forEach(([k, v]) => {
-                        if (dayEffects[k] !== undefined) {
-                            dayEffects[k] += v;
+                        if (causalReport.programEffects[k] !== undefined) {
+                            causalReport.programEffects[k] += v;
                         }
                     });
                 }
             }
         });
+        causalReport.programEffects.power -= totalPowerUsed;
 
-        dayEffects.power -= totalPowerUsed;
+        const broadcastDetails = [];
+        if (this.gameState.todayActions.broadcastDone && this.gameState.selectedBroadcast) {
+            const msg = GameData.broadcastMessages.find(m => m.id === this.gameState.selectedBroadcast);
+            if (msg) {
+                const effectsText = Object.entries(msg.effects)
+                    .filter(([_, v]) => v !== 0)
+                    .map(([k, v]) => `${this.getStatName(k)}${v > 0 ? '+' : ''}${v}`)
+                    .join(', ');
+                broadcastDetails.push(`播报：${msg.title}（${effectsText}，耗电⚡${msg.power}）`);
+                Object.entries(msg.effects).forEach(([k, v]) => {
+                    if (causalReport.broadcastEffects[k] !== undefined) {
+                        causalReport.broadcastEffects[k] += v;
+                    }
+                });
+                causalReport.broadcastEffects.power -= msg.power;
+            }
+        }
 
+        const qaDetails = [];
+        const todayQa = this.gameState.answeredQuestions.filter(q => q.day === this.gameState.day);
+        let qaCorrect = 0, qaWrong = 0;
+        todayQa.forEach(item => {
+            const question = GameData.questionBank.find(q => q.question === item.question);
+            if (question) {
+                const option = question.options.find(o => o.text === item.answer);
+                if (option) {
+                    const effectsText = Object.entries(option.effects)
+                        .filter(([_, v]) => v !== 0)
+                        .map(([k, v]) => `${this.getStatName(k)}${v > 0 ? '+' : ''}${v}`)
+                        .join(', ');
+                    qaDetails.push(`${item.correct ? '✓' : '✗'} ${item.question.substring(0, 20)}... → ${effectsText}`);
+                    Object.entries(option.effects).forEach(([k, v]) => {
+                        if (causalReport.qaEffects[k] !== undefined) {
+                            causalReport.qaEffects[k] += v;
+                        }
+                    });
+                    if (item.correct) qaCorrect++; else qaWrong++;
+                }
+            }
+        });
+
+        const equipmentDetails = [];
+        this.gameState.todayActions.repairDone.forEach(eqId => {
+            const eq = this.gameState.equipment.find(e => e.id === eqId);
+            if (eq) {
+                const survivor = this.gameState.survivors.find(s => s.task && s.task.includes(eq.name));
+                equipmentDetails.push(`维修 ${eq.name}（+25%状态，消耗🔧${eq.repairCost}零件${survivor ? `，${survivor.name}疲劳+20` : ''}）`);
+            }
+        });
+        this.gameState.equipment.forEach(eq => {
+            if (eq.condition <= 30) {
+                causalReport.equipmentEffects.morale -= 3;
+                equipmentDetails.push(`${eq.name} 状态过低（${eq.condition}%），民心-3`);
+            }
+        });
+
+        const rumorDetails = [];
+        this.gameState.todayActions.rumorSuppressDone.forEach(rumorId => {
+            const rumor = this.gameState.rumors.find(r => r.id === rumorId) || 
+                          this.gameState.settlementHistory.length > 0 ? null : null;
+            if (rumor) {
+                rumorDetails.push(`压制谣言"${rumor.title}"（严重度-40，民心+10，耗电⚡8，疲劳+10）`);
+            } else {
+                rumorDetails.push(`压制谣言成功（谣言已平息，民心+10，耗电⚡8，疲劳+10）`);
+            }
+        });
+        let activeRumorCount = 0;
+        let severeRumorCount = 0;
+        this.gameState.rumors.forEach(rumor => {
+            rumor.severity += 10;
+            causalReport.rumorEffects.rumor += 5;
+            activeRumorCount++;
+            if (rumor.severity >= 80) {
+                causalReport.rumorEffects.morale -= 8;
+                severeRumorCount++;
+            }
+        });
+        if (activeRumorCount > 0) {
+            rumorDetails.push(`${activeRumorCount}个活跃谣言自然发酵，谣言+${activeRumorCount * 5}`);
+        }
+        if (severeRumorCount > 0) {
+            rumorDetails.push(`${severeRumorCount}个严重谣言（≥80%）导致民心-${severeRumorCount * 8}`);
+        }
+        this.gameState.rumors = this.gameState.rumors.filter(r => r.severity <= 100);
+
+        const resourceDetails = [];
         const survivorCount = this.gameState.survivors.length;
-        dayEffects.food -= survivorCount;
-        this.gameState.resources.food += dayEffects.food;
+        causalReport.resourceEffects.food -= survivorCount;
+        resourceDetails.push(`${survivorCount}名幸存者消耗食物-${survivorCount}`);
+        this.gameState.resources.food += causalReport.resourceEffects.food;
 
         this.gameState.survivors.forEach(s => {
             if (s.fatigue > 0) {
@@ -719,44 +827,57 @@ class UndergroundRadioGame {
             }
         });
 
-        this.gameState.rumors.forEach(rumor => {
-            rumor.severity += 10;
-            dayEffects.rumor += 5;
-        });
+        const thresholdDetails = [];
+        if (this.gameState.status.power + causalReport.programEffects.power + causalReport.broadcastEffects.power <= this.gameState.thresholds.power) {
+            causalReport.thresholdEffects.morale -= 10;
+            thresholdDetails.push(`电量低于警戒线（${this.gameState.thresholds.power}%），民心-10`);
+        }
+        if (this.gameState.status.noise + causalReport.programEffects.noise >= this.gameState.thresholds.noise) {
+            causalReport.thresholdEffects.morale -= 5;
+            causalReport.thresholdEffects.fatigue += 10;
+            thresholdDetails.push(`噪声高于警戒线（${this.gameState.thresholds.noise}%），民心-5，疲劳+10`);
+        }
+        if (this.gameState.status.rumor + causalReport.rumorEffects.rumor + causalReport.programEffects.rumor + causalReport.broadcastEffects.rumor + causalReport.qaEffects.rumor >= this.gameState.thresholds.rumor) {
+            causalReport.thresholdEffects.morale -= 15;
+            thresholdDetails.push(`谣言高于警戒线（${this.gameState.thresholds.rumor}%），民心-15`);
+        }
+        if (this.gameState.status.fatigue + causalReport.thresholdEffects.fatigue >= this.gameState.thresholds.fatigue) {
+            causalReport.thresholdEffects.morale -= 5;
+            thresholdDetails.push(`疲劳高于警戒线（${this.gameState.thresholds.fatigue}%），民心-5`);
+        }
 
-        this.gameState.rumors = this.gameState.rumors.filter(r => r.severity <= 100);
-        this.gameState.rumors.forEach(r => {
-            if (r.severity >= 80) {
-                dayEffects.morale -= 8;
-            }
-        });
+        const totalMoraleBefore = this.gameState.status.morale + 
+            causalReport.programEffects.morale + 
+            causalReport.broadcastEffects.morale + 
+            causalReport.qaEffects.morale + 
+            causalReport.equipmentEffects.morale + 
+            causalReport.rumorEffects.morale + 
+            causalReport.thresholdEffects.morale;
 
-        if (this.gameState.status.power <= this.gameState.thresholds.power) {
-            dayEffects.morale -= 10;
-        }
-        if (this.gameState.status.noise >= this.gameState.thresholds.noise) {
-            dayEffects.morale -= 5;
-            dayEffects.fatigue += 10;
-        }
-        if (this.gameState.status.rumor >= this.gameState.thresholds.rumor) {
-            dayEffects.morale -= 15;
-        }
-        if (this.gameState.status.fatigue >= this.gameState.thresholds.fatigue) {
-            dayEffects.morale -= 5;
-        }
-        if (this.gameState.status.morale <= this.gameState.thresholds.morale) {
+        if (totalMoraleBefore <= this.gameState.thresholds.morale) {
             this.gameState.districts.forEach(d => {
                 d.trust = Math.max(0, d.trust - 5);
             });
+            thresholdDetails.push(`民心低于警戒线（${this.gameState.thresholds.morale}%），各城区信任-5`);
         }
 
         if (this.gameState.resources.food < 0) {
-            dayEffects.morale -= 20;
+            causalReport.resourceEffects.morale -= 20;
             this.gameState.resources.food = 0;
             this.gameState.survivors.forEach(s => {
                 s.health -= 10;
             });
+            resourceDetails.push(`食物短缺！民心-20，幸存者健康-10`);
         }
+
+        const dayEffects = {
+            power: causalReport.programEffects.power + causalReport.broadcastEffects.power,
+            noise: causalReport.programEffects.noise,
+            rumor: causalReport.programEffects.rumor + causalReport.rumorEffects.rumor + causalReport.broadcastEffects.rumor + causalReport.qaEffects.rumor,
+            fatigue: causalReport.programEffects.fatigue + causalReport.thresholdEffects.fatigue,
+            morale: causalReport.programEffects.morale + causalReport.broadcastEffects.morale + causalReport.qaEffects.morale + causalReport.equipmentEffects.morale + causalReport.rumorEffects.morale + causalReport.resourceEffects.morale + causalReport.thresholdEffects.morale,
+            food: causalReport.resourceEffects.food
+        };
 
         Object.entries(dayEffects).forEach(([k, v]) => {
             if (k !== 'food' && this.gameState.status[k] !== undefined) {
@@ -769,13 +890,42 @@ class UndergroundRadioGame {
         else if (this.gameState.status.morale <= 40) summary = '堪忧';
         else if (this.gameState.status.morale >= 80) summary = '良好';
 
+        const keyDecisions = [];
+        if (programDetails.length > 0) keyDecisions.push(...programDetails.filter(d => d.includes('紧急') || d.includes('访谈') || d.includes('静默')));
+        if (broadcastDetails.length > 0) keyDecisions.push(...broadcastDetails);
+        if (equipmentDetails.length > 0 && equipmentDetails.some(d => d.includes('维修'))) keyDecisions.push(...equipmentDetails.filter(d => d.includes('维修')));
+        if (rumorDetails.length > 0 && rumorDetails.some(d => d.includes('压制'))) keyDecisions.push(...rumorDetails.filter(d => d.includes('压制')));
+        if (qaDetails.length > 0) keyDecisions.push(`今日问答：${qaCorrect}对${qaWrong}错`);
+        if (keyDecisions.length === 0) keyDecisions.push('今日无重大决策');
+
         this.gameState.settlementHistory.push({
             day: this.gameState.day,
             effects: dayEffects,
-            summary: summary
+            summary: summary,
+            causalReport: causalReport,
+            details: {
+                programs: programDetails,
+                broadcasts: broadcastDetails,
+                qa: qaDetails,
+                equipment: equipmentDetails,
+                rumors: rumorDetails,
+                resources: resourceDetails,
+                thresholds: thresholdDetails
+            },
+            keyDecisions: keyDecisions,
+            qaStats: { correct: qaCorrect, wrong: qaWrong },
+            schedule: { ...this.gameState.schedule }
         });
 
-        this.showSettlementModal(dayEffects, summary);
+        this.showSettlementModal(dayEffects, summary, causalReport, {
+            programs: programDetails,
+            broadcasts: broadcastDetails,
+            qa: qaDetails,
+            equipment: equipmentDetails,
+            rumors: rumorDetails,
+            resources: resourceDetails,
+            thresholds: thresholdDetails
+        }, keyDecisions);
 
         this.gameState.day++;
         this.gameState.schedule = { morning: null, afternoon: null, evening: null };
@@ -816,19 +966,91 @@ class UndergroundRadioGame {
         this.renderAll();
     }
 
-    showSettlementModal(effects, summary) {
-        let effectsHtml = '';
-        Object.entries(effects).forEach(([stat, value]) => {
-            if (value !== 0) {
-                const className = value > 0 ? 'positive' : 'negative';
-                const sign = value > 0 ? '+' : '';
-                effectsHtml += `<span class="effect-tag ${className}">${this.getStatName(stat)} ${sign}${value}</span>`;
-            }
-        });
+    showSettlementModal(effects, summary, causalReport, details, keyDecisions) {
+        const html = this.buildCausalReportHtml(this.gameState.day, effects, summary, causalReport, details, keyDecisions);
+        document.getElementById('modalTitle').textContent = `第 ${this.gameState.day} 天因果报告 - ${summary}`;
+        document.getElementById('modalText').innerHTML = html;
+        document.getElementById('modalEffects').innerHTML = '';
+        document.getElementById('eventModal').classList.add('active');
+    }
 
-        document.getElementById('modalTitle').textContent = `第 ${this.gameState.day} 天结算 - ${summary}`;
-        document.getElementById('modalText').textContent = '今日运营已结束，以下是今日总结：';
-        document.getElementById('modalEffects').innerHTML = effectsHtml;
+    buildCausalReportHtml(day, effects, summary, causalReport, details, keyDecisions) {
+        const formatEffects = (eff) => {
+            return Object.entries(eff)
+                .filter(([_, v]) => v !== 0)
+                .map(([k, v]) => {
+                    const className = v > 0 ? 'positive' : 'negative';
+                    const sign = v > 0 ? '+' : '';
+                    return `<span class="effect-tag ${className}">${this.getStatName(k)} ${sign}${v}</span>`;
+                })
+                .join('');
+        };
+
+        const sectionHtml = (title, icon, effects, detailList) => {
+            const hasEffects = Object.values(effects).some(v => v !== 0);
+            const hasDetails = detailList && detailList.length > 0;
+            if (!hasEffects && !hasDetails) return '';
+            return `
+                <div class="causal-section">
+                    <div class="causal-section-header">
+                        <span class="causal-icon">${icon}</span>
+                        <span class="causal-title">${title}</span>
+                    </div>
+                    ${hasEffects ? `<div class="causal-effects">${formatEffects(effects)}</div>` : ''}
+                    ${hasDetails ? `
+                        <ul class="causal-details">
+                            ${detailList.map(d => `<li>${d}</li>`).join('')}
+                        </ul>
+                    ` : ''}
+                </div>
+            `;
+        };
+
+        let totalHtml = `<div class="causal-report">`;
+        
+        totalHtml += `<div class="causal-summary">
+            <div class="causal-summary-title">📊 今日运营总结</div>
+            <div class="causal-summary-effects">${formatEffects(effects)}</div>
+        </div>`;
+
+        totalHtml += sectionHtml('节目编排', '📅', causalReport.programEffects, details.programs);
+        totalHtml += sectionHtml('广播消息', '📢', causalReport.broadcastEffects, details.broadcasts);
+        totalHtml += sectionHtml('听众问答', '❓', causalReport.qaEffects, details.qa);
+        totalHtml += sectionHtml('设备状态', '🔧', causalReport.equipmentEffects, details.equipment);
+        totalHtml += sectionHtml('谣言动态', '🚫', causalReport.rumorEffects, details.rumors);
+        totalHtml += sectionHtml('资源消耗', '📦', causalReport.resourceEffects, details.resources);
+        totalHtml += sectionHtml('阈值警告', '⚠️', causalReport.thresholdEffects, details.thresholds);
+
+        if (keyDecisions && keyDecisions.length > 0) {
+            totalHtml += `
+                <div class="causal-section">
+                    <div class="causal-section-header">
+                        <span class="causal-icon">🎯</span>
+                        <span class="causal-title">今日关键决策</span>
+                    </div>
+                    <ul class="causal-details">
+                        ${keyDecisions.map(d => `<li class="key-decision">${d}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        totalHtml += `</div>`;
+        return totalHtml;
+    }
+
+    showSettlementDetailModal(settlement) {
+        const html = this.buildCausalReportHtml(
+            settlement.day,
+            settlement.effects,
+            settlement.summary,
+            settlement.causalReport,
+            settlement.details,
+            settlement.keyDecisions
+        );
+        document.getElementById('modalTitle').textContent = `第 ${settlement.day} 天结算回顾 - ${settlement.summary}`;
+        document.getElementById('modalText').innerHTML = html;
+        document.getElementById('modalEffects').innerHTML = '';
         document.getElementById('eventModal').classList.add('active');
     }
 

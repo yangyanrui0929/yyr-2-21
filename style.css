@@ -790,10 +790,26 @@ body {
     border: 2px solid #e94560;
     border-radius: 15px;
     padding: 30px;
-    max-width: 500px;
+    max-width: 700px;
+    max-height: 85vh;
+    overflow-y: auto;
     width: 90%;
     text-align: center;
     animation: modalIn 0.3s ease;
+}
+
+.modal-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+    background: #1a252f;
+    border-radius: 4px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: #e94560;
+    border-radius: 4px;
 }
 
 @keyframes modalIn {
@@ -856,4 +872,146 @@ body {
     .status-bar {
         justify-content: flex-start;
     }
+}
+
+.causal-report {
+    text-align: left;
+}
+
+.causal-summary {
+    background: rgba(233, 69, 96, 0.1);
+    border: 1px solid #e94560;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.causal-summary-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #e94560;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.causal-summary-effects {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+.causal-section {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-left: 3px solid #3498db;
+}
+
+.causal-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.causal-icon {
+    font-size: 18px;
+}
+
+.causal-title {
+    font-weight: bold;
+    color: #ecf0f1;
+    font-size: 14px;
+}
+
+.causal-effects {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.causal-details {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.causal-details li {
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: #bdc3c7;
+    line-height: 1.5;
+}
+
+.causal-details li.key-decision {
+    background: rgba(46, 204, 113, 0.15);
+    border-left: 2px solid #2ecc71;
+    color: #2ecc71;
+}
+
+.settlement-item.clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.settlement-item.clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3);
+    border-color: #e94560;
+}
+
+.settlement-summary {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.settlement-summary.良好 {
+    background: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+}
+
+.settlement-summary.正常 {
+    background: rgba(52, 152, 219, 0.2);
+    color: #3498db;
+}
+
+.settlement-summary.堪忧 {
+    background: rgba(243, 156, 18, 0.2);
+    color: #f39c12;
+}
+
+.settlement-summary.危急 {
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+}
+
+.settlement-decision-preview {
+    font-size: 11px;
+    color: #95a5a6;
+    padding: 5px 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    margin-top: 8px;
+    font-style: italic;
+}
+
+.settlement-hint {
+    font-size: 10px;
+    color: #7f8c8d;
+    text-align: right;
+    margin-top: 6px;
+    opacity: 0.7;
+}
+
+.settlement-item.clickable:hover .settlement-hint {
+    opacity: 1;
+    color: #e94560;
 }
